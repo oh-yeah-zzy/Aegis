@@ -1,0 +1,42 @@
+# Aegis Docker Compose 配置
+# 权限控制网关服务
+
+version: '3.8'
+
+services:
+  aegis:
+    build: .
+    container_name: aegis
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=false
+      - DATABASE_URL=sqlite+aiosqlite:///./data/aegis.db
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
+      - UPSTREAM_SERVICE_URL=http://service-atlas:8001
+    volumes:
+      - aegis-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - aegis-network
+
+  # 可选：与 ServiceAtlas 一起部署
+  # service-atlas:
+  #   image: service-atlas:latest
+  #   container_name: service-atlas
+  #   ports:
+  #     - "8001:8001"
+  #   networks:
+  #     - aegis-network
+
+volumes:
+  aegis-data:
+
+networks:
+  aegis-network:
+    driver: bridge

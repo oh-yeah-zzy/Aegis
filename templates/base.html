@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Aegis</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="/admin/">Aegis</a>
+            <span>权限网关</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="/admin/" class="{% if active == 'dashboard' %}active{% endif %}">仪表盘</a></li>
+            <li><a href="/admin/users" class="{% if active == 'users' %}active{% endif %}">用户管理</a></li>
+            <li><a href="/admin/roles" class="{% if active == 'roles' %}active{% endif %}">角色管理</a></li>
+            <li><a href="/admin/policies" class="{% if active == 'policies' %}active{% endif %}">认证策略</a></li>
+            <li><a href="/admin/audit" class="{% if active == 'audit' %}active{% endif %}">审计日志</a></li>
+            <li><a href="/docs" target="_blank">API 文档</a></li>
+        </ul>
+        <div class="nav-user">
+            <span class="username">{{ username }}</span>
+            <button class="logout-btn" onclick="logout()">退出</button>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>Aegis v0.1.0 - 权限控制网关</p>
+    </footer>
+
+    <script src="/static/js/main.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="users-page">
+    <h1>用户管理</h1>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="toolbar">
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="搜索用户名...">
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="showAddUserModal()">+ 添加用户</button>
+        </div>
+        <div class="card-body">
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>用户名</th>
+                            <th>角色</th>
+                            <th>超级管理员</th>
+                            <th>状态</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table">
+                        <tr>
+                            <td colspan="7" class="empty-state">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加用户模态框 -->
+<div id="add-user-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>添加用户</h3>
+            <button class="modal-close" onclick="closeModal('add-user-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="add-user-form">
+                <div class="form-group">
+                    <label for="new-username">用户名</label>
+                    <input type="text" id="new-username" required>
+                </div>
+                <div class="form-group">
+                    <label for="new-password">密码</label>
+                    <input type="password" id="new-password" required>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="new-is-superuser">
+                        超级管理员
+                    </label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('add-user-modal')">取消</button>
+            <button class="btn btn-primary" onclick="addUser()">添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑用户模态框 -->
+<div id="edit-user-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>编辑用户</h3>
+            <button class="modal-close" onclick="closeModal('edit-user-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="edit-user-form">
+                <input type="hidden" id="edit-user-id">
+                <div class="form-group">
+                    <label for="edit-username">用户名</label>
+                    <input type="text" id="edit-username" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="edit-password">新密码（留空不修改）</label>
+                    <input type="password" id="edit-password">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="edit-is-superuser">
+                        超级管理员
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="edit-is-active">
+                        启用账号
+                    </label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('edit-user-modal')">取消</button>
+            <button class="btn btn-primary" onclick="updateUser()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allUsers = [];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadUsers();
+
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            filterUsers(e.target.value);
+        });
+    });
+
+    async function loadUsers() {
+        try {
+            const response = await fetchWithAuth('/api/v1/users');
+            if (response.ok) {
+                allUsers = await response.json();
+                renderUsers(allUsers);
+            }
+        } catch (error) {
+            console.error('加载用户失败:', error);
+        }
+    }
+
+    function renderUsers(users) {
+        const tbody = document.getElementById('users-table');
+
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无用户</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = users.map(user => `
+            <tr>
+                <td>${user.id}</td>
+                <td>${user.username}</td>
+                <td>${(user.roles || []).map(r => r.name).join(', ') || '-'}</td>
+                <td>${user.is_superuser ? '<span class="badge badge-info">是</span>' : '否'}</td>
+                <td>${user.is_active ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-danger">禁用</span>'}</td>
+                <td>${formatTime(user.created_at)}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="showEditUserModal('${user.id}')">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser('${user.id}')">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function filterUsers(keyword) {
+        const filtered = allUsers.filter(u =>
+            u.username.toLowerCase().includes(keyword.toLowerCase())
+        );
+        renderUsers(filtered);
+    }
+
+    function showAddUserModal() {
+        document.getElementById('add-user-form').reset();
+        document.getElementById('add-user-modal').classList.add('active');
+    }
+
+    function showEditUserModal(userId) {
+        const user = allUsers.find(u => u.id === userId);
+        if (!user) return;
+
+        document.getElementById('edit-user-id').value = user.id;
+        document.getElementById('edit-username').value = user.username;
+        document.getElementById('edit-password').value = '';
+        document.getElementById('edit-is-superuser').checked = user.is_superuser;
+        document.getElementById('edit-is-active').checked = user.is_active;
+        document.getElementById('edit-user-modal').classList.add('active');
+    }
+
+    function closeModal(modalId) {
+        document.getElementById(modalId).classList.remove('active');
+    }
+
+    async function addUser() {
+        const username = document.getElementById('new-username').value;
+        const password = document.getElementById('new-password').value;
+        const isSuperuser = document.getElementById('new-is-superuser').checked;
+
+        try {
+            const response = await fetchWithAuth('/api/v1/users', {
+                method: 'POST',
+                body: JSON.stringify({ username, password, is_superuser: isSuperuser }),
+            });
+
+            if (response.ok) {
+                closeModal('add-user-modal');
+                await loadUsers();
+                alert('用户添加成功');
+            } else {
+                const data = await response.json();
+                alert(data.detail || '添加失败');
+            }
+        } catch (error) {
+            alert('添加失败: ' + error.message);
+        }
+    }
+
+    async function updateUser() {
+        const userId = document.getElementById('edit-user-id').value;
+        const password = document.getElementById('edit-password').value;
+        const isSuperuser = document.getElementById('edit-is-superuser').checked;
+        const isActive = document.getElementById('edit-is-active').checked;
+
+        const data = { is_superuser: isSuperuser, is_active: isActive };
+        if (password) {
+            data.password = password;
+        }
+
+        try {
+            const response = await fetchWithAuth(`/api/v1/users/${userId}`, {
+                method: 'PUT',
+                body: JSON.stringify(data),
+            });
+
+            if (response.ok) {
+                closeModal('edit-user-modal');
+                await loadUsers();
+                alert('用户更新成功');
+            } else {
+                const res = await response.json();
+                alert(res.detail || '更新失败');
+            }
+        } catch (error) {
+            alert('更新失败: ' + error.message);
+        }
+    }
+
+    async function deleteUser(userId) {
+        if (!confirm('确定要删除此用户吗？')) return;
+
+        try {
+            const response = await fetchWithAuth(`/api/v1/users/${userId}`, {
+                method: 'DELETE',
+            });
+
+            if (response.ok) {
+                await loadUsers();
+                alert('用户删除成功');
+            } else {
+                const data = await response.json();
+                alert(data.detail || '删除失败');
+            }
+        } catch (error) {
+            alert('删除失败: ' + error.message);
+        }
+    }
+
+    function formatTime(timestamp) {
+        if (!timestamp) return '-';
+        const date = new Date(timestamp);
+        return date.toLocaleString('zh-CN');
+    }
+</script>
+{% endblock %}
