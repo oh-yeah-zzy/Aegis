@@ -76,3 +76,14 @@ async def audit_page(request: Request):
         "active": "audit",
         "username": "管理员",
     })
+
+
+@router.get("/admin/portal", response_class=HTMLResponse)
+async def portal_page(request: Request):
+    """服务目录页面"""
+    return templates.TemplateResponse("portal.html", {
+        "request": request,
+        "title": "服务目录",
+        "active": "portal",
+        "username": "管理员",
+    })

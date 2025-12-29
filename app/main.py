@@ -16,6 +16,7 @@ from app.db.base import Base
 from app.db.session import engine
 from app.api.v1.router import api_router
 from app.gateway.router import router as gateway_router
+from app.gateway.portal_proxy import router as portal_proxy_router
 from app.middleware.request_id import RequestIDMiddleware
 from app.web import router as web_router
 
@@ -218,6 +219,9 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 # 注册 Web 管理界面路由
 app.include_router(web_router)
+
+# 注册服务门户代理路由（处理 /s/{service_id}/ 格式的请求）
+app.include_router(portal_proxy_router)
 
 # 注册网关路由（放在最后，作为兜底路由）
 # 注意：网关路由使用通配符，会匹配所有未被 API 路由处理的请求

@@ -3,19 +3,31 @@
 
 将 Aegis 注册到 ServiceAtlas 服务注册中心，并维护心跳
 同时提供从 ServiceAtlas 获取路由规则的功能
+
+优先使用 ServiceAtlas SDK，若未安装则使用内置实现
 """
 
 import asyncio
-import atexit
-import signal
 import time
 from typing import Optional, List
 from datetime import datetime
 from dataclasses import dataclass
+import logging
 
 import httpx
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+# 尝试导入 SDK
+try:
+    from serviceatlas_client import AsyncServiceAtlasClient
+    SDK_AVAILABLE = True
+    logger.debug("[Aegis] 使用 ServiceAtlas SDK")
+except ImportError:
+    SDK_AVAILABLE = False
+    logger.debug("[Aegis] SDK 未安装，使用内置实现")
 
 
 @dataclass
@@ -79,12 +91,171 @@ class RouteCache:
         self._last_update = 0
 
 
+# ================== 内置实现（SDK 不可用时使用）==================
+if not SDK_AVAILABLE:
+    class AsyncServiceAtlasClient:
+        """
+        内置的 ServiceAtlas 异步注册客户端
+        仅在 SDK 未安装时使用
+        """
+
+        def __init__(
+            self,
+            registry_url: str,
+            service_id: str,
+            service_name: str,
+            host: str,
+            port: int,
+            protocol: str = "http",
+            health_check_path: str = "/health",
+            is_gateway: bool = False,
+            base_path: str = "",
+            metadata: Optional[dict] = None,
+            heartbeat_interval: int = 30,
+            trust_env: bool = True,
+        ):
+            self.registry_url = registry_url.rstrip("/")
+            self.service_id = service_id
+            self.service_name = service_name
+            self.host = host
+            self.port = port
+            self.protocol = protocol
+            self.health_check_path = health_check_path
+            self.is_gateway = is_gateway
+            self.base_path = base_path
+            self.metadata = metadata or {}
+            self.heartbeat_interval = heartbeat_interval
+            self.trust_env = trust_env
+
+            self._heartbeat_task: Optional[asyncio.Task] = None
+            self._running = False
+            self._client: Optional[httpx.AsyncClient] = None
+
+        async def start(self) -> bool:
+            """启动客户端：注册服务并开始心跳"""
+            if self._running:
+                return True
+
+            self._running = True
+            self._client = httpx.AsyncClient(timeout=10.0, trust_env=self.trust_env)
+
+            # 注册服务
+            if not await self._register():
+                print(f"[Aegis] 服务注册失败")
+                return False
+
+            # 启动心跳任务
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+            print(f"[Aegis] 已注册到服务注册中心: {self.registry_url}")
+            print(f"[Aegis] 服务ID: {self.service_id}, 心跳间隔: {self.heartbeat_interval}秒")
+            return True
+
+        async def stop(self):
+            """停止客户端：停止心跳并注销服务"""
+            if not self._running:
+                return
+
+            self._running = False
+
+            # 取消心跳任务
+            if self._heartbeat_task:
+                self._heartbeat_task.cancel()
+                try:
+                    await self._heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+
+            # 注销服务
+            await self._deregister()
+
+            # 关闭 HTTP 客户端
+            if self._client:
+                await self._client.aclose()
+                self._client = None
+
+            print(f"[Aegis] 已从服务注册中心注销")
+
+        async def _register(self) -> bool:
+            """注册服务到 ServiceAtlas"""
+            url = f"{self.registry_url}/api/v1/services"
+
+            payload = {
+                "id": self.service_id,
+                "name": self.service_name,
+                "host": self.host,
+                "port": self.port,
+                "protocol": self.protocol,
+                "health_check_path": self.health_check_path,
+                "is_gateway": self.is_gateway,
+                "service_meta": {
+                    **self.metadata,
+                    "version": settings.app_version,
+                    "description": "权限控制网关服务",
+                    "registered_at": datetime.utcnow().isoformat(),
+                },
+            }
+            # 只有设置了 base_path 才发送该字段
+            if self.base_path:
+                payload["base_path"] = self.base_path
+
+            try:
+                response = await self._client.post(url, json=payload)
+                if response.status_code in (200, 201):
+                    print(f"[Aegis] 服务注册成功")
+                    return True
+                else:
+                    print(f"[Aegis] 服务注册失败: {response.status_code} - {response.text}")
+                    return False
+            except Exception as e:
+                print(f"[Aegis] 服务注册异常: {e}")
+                return False
+
+        async def _deregister(self):
+            """从 ServiceAtlas 注销服务"""
+            url = f"{self.registry_url}/api/v1/services/{self.service_id}"
+
+            try:
+                response = await self._client.delete(url)
+                if response.status_code in (200, 204):
+                    print(f"[Aegis] 服务注销成功")
+                else:
+                    print(f"[Aegis] 服务注销失败: {response.status_code}")
+            except Exception as e:
+                print(f"[Aegis] 服务注销异常: {e}")
+
+        async def _heartbeat(self):
+            """发送心跳"""
+            url = f"{self.registry_url}/api/v1/services/{self.service_id}/heartbeat"
+
+            try:
+                response = await self._client.post(url)
+                if response.status_code != 200:
+                    print(f"[Aegis] 心跳失败: {response.status_code}")
+            except Exception as e:
+                print(f"[Aegis] 心跳异常: {e}")
+
+        async def _heartbeat_loop(self):
+            """心跳循环"""
+            while self._running:
+                try:
+                    await asyncio.sleep(self.heartbeat_interval)
+                    if self._running:
+                        await self._heartbeat()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    print(f"[Aegis] 心跳循环异常: {e}")
+
+
 class ServiceRegistryClient:
     """
     ServiceAtlas 服务注册客户端
 
     负责将 Aegis 注册到服务注册中心，并定期发送心跳
     同时提供从 ServiceAtlas 获取路由规则的功能
+
+    此类封装了 SDK 的 AsyncServiceAtlasClient，并添加了路由规则获取功能
     """
 
     def __init__(
@@ -97,9 +268,11 @@ class ServiceRegistryClient:
         protocol: str = "http",
         health_check_path: str = "/health",
         is_gateway: bool = True,
+        base_path: str = "",
         metadata: Optional[dict] = None,
         heartbeat_interval: int = 30,
         route_cache_ttl: int = 30,
+        trust_env: bool = False,
     ):
         """
         初始化服务注册客户端
@@ -113,24 +286,34 @@ class ServiceRegistryClient:
             protocol: 协议类型
             health_check_path: 健康检查路径
             is_gateway: 是否作为网关
+            base_path: 代理路径前缀（通过其他网关代理时设置）
             metadata: 扩展元数据
             heartbeat_interval: 心跳间隔（秒）
             route_cache_ttl: 路由缓存过期时间（秒）
+            trust_env: 是否信任环境变量中的代理配置
         """
         self.registry_url = registry_url.rstrip("/")
         self.service_id = service_id
-        self.service_name = service_name
-        self.host = host
-        self.port = port
-        self.protocol = protocol
-        self.health_check_path = health_check_path
-        self.is_gateway = is_gateway
-        self.metadata = metadata or {}
-        self.heartbeat_interval = heartbeat_interval
+        self.trust_env = trust_env
 
-        self._heartbeat_task: Optional[asyncio.Task] = None
+        # 创建 SDK 客户端（或内置实现）
+        self._sdk_client = AsyncServiceAtlasClient(
+            registry_url=registry_url,
+            service_id=service_id,
+            service_name=service_name,
+            host=host,
+            port=port,
+            protocol=protocol,
+            health_check_path=health_check_path,
+            is_gateway=is_gateway,
+            base_path=base_path,
+            metadata=metadata,
+            heartbeat_interval=heartbeat_interval,
+            trust_env=trust_env,
+        )
+
         self._running = False
-        self._client: Optional[httpx.AsyncClient] = None
+        self._http_client: Optional[httpx.AsyncClient] = None
 
         # 路由规则缓存
         self._route_cache = RouteCache(ttl=route_cache_ttl)
@@ -145,16 +328,10 @@ class ServiceRegistryClient:
             return
 
         self._running = True
-        self._client = httpx.AsyncClient(timeout=10.0)
+        self._http_client = httpx.AsyncClient(timeout=10.0, trust_env=self.trust_env)
 
-        # 注册服务
-        await self._register()
-
-        # 启动心跳任务
-        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-
-        print(f"[Aegis] 已注册到服务注册中心: {self.registry_url}")
-        print(f"[Aegis] 服务ID: {self.service_id}, 心跳间隔: {self.heartbeat_interval}秒")
+        # 使用 SDK 客户端启动
+        await self._sdk_client.start()
 
     async def stop(self):
         """
@@ -167,91 +344,13 @@ class ServiceRegistryClient:
 
         self._running = False
 
-        # 取消心跳任务
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
-            try:
-                await self._heartbeat_task
-            except asyncio.CancelledError:
-                pass
-
-        # 注销服务
-        await self._deregister()
+        # 使用 SDK 客户端停止
+        await self._sdk_client.stop()
 
         # 关闭 HTTP 客户端
-        if self._client:
-            await self._client.aclose()
-            self._client = None
-
-        print(f"[Aegis] 已从服务注册中心注销")
-
-    async def _register(self):
-        """注册服务到 ServiceAtlas"""
-        url = f"{self.registry_url}/api/v1/services"
-
-        payload = {
-            "id": self.service_id,
-            "name": self.service_name,
-            "host": self.host,
-            "port": self.port,
-            "protocol": self.protocol,
-            "health_check_path": self.health_check_path,
-            "is_gateway": self.is_gateway,
-            "service_meta": {
-                **self.metadata,
-                "version": settings.app_version,
-                "description": "权限控制网关服务",
-                "registered_at": datetime.utcnow().isoformat(),
-            },
-        }
-
-        try:
-            response = await self._client.post(url, json=payload)
-            if response.status_code in (200, 201):
-                print(f"[Aegis] 服务注册成功")
-            else:
-                print(f"[Aegis] 服务注册失败: {response.status_code} - {response.text}")
-        except Exception as e:
-            print(f"[Aegis] 服务注册异常: {e}")
-
-    async def _deregister(self):
-        """从 ServiceAtlas 注销服务"""
-        url = f"{self.registry_url}/api/v1/services/{self.service_id}"
-
-        try:
-            response = await self._client.delete(url)
-            if response.status_code in (200, 204):
-                print(f"[Aegis] 服务注销成功")
-            else:
-                print(f"[Aegis] 服务注销失败: {response.status_code}")
-        except Exception as e:
-            print(f"[Aegis] 服务注销异常: {e}")
-
-    async def _heartbeat(self):
-        """发送心跳"""
-        url = f"{self.registry_url}/api/v1/services/{self.service_id}/heartbeat"
-
-        try:
-            response = await self._client.post(url)
-            if response.status_code == 200:
-                # 心跳成功，静默
-                pass
-            else:
-                print(f"[Aegis] 心跳失败: {response.status_code}")
-        except Exception as e:
-            print(f"[Aegis] 心跳异常: {e}")
-
-    async def _heartbeat_loop(self):
-        """心跳循环"""
-        while self._running:
-            try:
-                await asyncio.sleep(self.heartbeat_interval)
-                if self._running:
-                    await self._heartbeat()
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[Aegis] 心跳循环异常: {e}")
+        if self._http_client:
+            await self._http_client.aclose()
+            self._http_client = None
 
     async def fetch_routes(self, force_refresh: bool = False) -> List[RemoteRoute]:
         """
@@ -275,7 +374,7 @@ class ServiceRegistryClient:
 
         try:
             # 如果客户端未初始化，创建一个临时的
-            client = self._client or httpx.AsyncClient(timeout=10.0)
+            client = self._http_client or httpx.AsyncClient(timeout=10.0, trust_env=self.trust_env)
             response = await client.get(url, headers=headers)
 
             if response.status_code == 200:
@@ -360,11 +459,13 @@ async def init_registry_client():
         protocol="http",
         health_check_path="/health",
         is_gateway=True,
+        base_path=settings.registry_service_base_path,
         metadata={
             "type": "gateway",
             "auth": "jwt",
         },
         heartbeat_interval=settings.registry_heartbeat_interval,
+        trust_env=False,  # 默认禁用代理，避免环境变量干扰
     )
 
     await _registry_client.start()

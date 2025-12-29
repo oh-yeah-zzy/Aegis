@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     registry_service_id: str = "aegis"  # 服务ID
     registry_service_name: str = "Aegis 权限网关"  # 服务名称
     registry_service_host: str = "127.0.0.1"  # 本服务对外暴露的地址
+    registry_service_base_path: str = ""  # 代理路径前缀（通过其他网关代理时设置）
     registry_heartbeat_interval: int = 30  # 心跳间隔（秒）
 
 
