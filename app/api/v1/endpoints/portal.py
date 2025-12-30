@@ -61,7 +61,9 @@ async def list_portal_services(
             )
 
             if response.status_code == 200:
-                remote_services = response.json()
+                data = response.json()
+                # ServiceAtlas 返回格式: {"total": N, "services": [...]}
+                remote_services = data.get("services", []) if isinstance(data, dict) else data
 
                 for svc in remote_services:
                     # 排除 Aegis 自身
