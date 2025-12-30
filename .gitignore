@@ -93,5 +93,5 @@ CLAUDE.md
 ChangeLog/
 
 # 预留目录
-gateway/
+/gateway/
 tests/
