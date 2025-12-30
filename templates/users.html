@@ -56,6 +56,10 @@
                     <input type="password" id="new-password" required>
                 </div>
                 <div class="form-group">
+                    <label for="new-password-confirm">确认密码</label>
+                    <input type="password" id="new-password-confirm" required>
+                </div>
+                <div class="form-group">
                     <label>
                         <input type="checkbox" id="new-is-superuser">
                         超级管理员
@@ -87,6 +91,10 @@
                 <div class="form-group">
                     <label for="edit-password">新密码（留空不修改）</label>
                     <input type="password" id="edit-password">
+                </div>
+                <div class="form-group">
+                    <label for="edit-password-confirm">确认新密码</label>
+                    <input type="password" id="edit-password-confirm">
                 </div>
                 <div class="form-group">
                     <label>
@@ -126,11 +134,19 @@
         try {
             const response = await fetchWithAuth('/api/v1/users');
             if (response.ok) {
-                allUsers = await response.json();
+                const data = await response.json();
+                // API 返回分页格式 {items, total, page, page_size}，提取 items 数组
+                allUsers = data.items || [];
                 renderUsers(allUsers);
+            } else {
+                console.error('加载用户失败:', response.status);
+                document.getElementById('users-table').innerHTML =
+                    '<tr><td colspan="7" class="empty-state">加载失败，请刷新重试</td></tr>';
             }
         } catch (error) {
             console.error('加载用户失败:', error);
+            document.getElementById('users-table').innerHTML =
+                '<tr><td colspan="7" class="empty-state">加载失败，请刷新重试</td></tr>';
         }
     }
 
@@ -177,8 +193,25 @@
         document.getElementById('edit-user-id').value = user.id;
         document.getElementById('edit-username').value = user.username;
         document.getElementById('edit-password').value = '';
+        document.getElementById('edit-password-confirm').value = '';
         document.getElementById('edit-is-superuser').checked = user.is_superuser;
         document.getElementById('edit-is-active').checked = user.is_active;
+
+        // 超级管理员不能被禁用或取消超级管理员权限
+        const isSuperuserCheckbox = document.getElementById('edit-is-superuser');
+        const isActiveCheckbox = document.getElementById('edit-is-active');
+        if (user.is_superuser) {
+            isSuperuserCheckbox.disabled = true;
+            isActiveCheckbox.disabled = true;
+            isSuperuserCheckbox.parentElement.title = '超级管理员权限不可取消';
+            isActiveCheckbox.parentElement.title = '超级管理员账户不可禁用';
+        } else {
+            isSuperuserCheckbox.disabled = false;
+            isActiveCheckbox.disabled = false;
+            isSuperuserCheckbox.parentElement.title = '';
+            isActiveCheckbox.parentElement.title = '';
+        }
+
         document.getElementById('edit-user-modal').classList.add('active');
     }
 
@@ -189,7 +222,14 @@
     async function addUser() {
         const username = document.getElementById('new-username').value;
         const password = document.getElementById('new-password').value;
+        const passwordConfirm = document.getElementById('new-password-confirm').value;
         const isSuperuser = document.getElementById('new-is-superuser').checked;
+
+        // 密码确认验证
+        if (password !== passwordConfirm) {
+            alert('两次输入的密码不一致');
+            return;
+        }
 
         try {
             const response = await fetchWithAuth('/api/v1/users', {
@@ -213,8 +253,15 @@
     async function updateUser() {
         const userId = document.getElementById('edit-user-id').value;
         const password = document.getElementById('edit-password').value;
+        const passwordConfirm = document.getElementById('edit-password-confirm').value;
         const isSuperuser = document.getElementById('edit-is-superuser').checked;
         const isActive = document.getElementById('edit-is-active').checked;
+
+        // 如果填写了密码，需要验证确认密码
+        if (password && password !== passwordConfirm) {
+            alert('两次输入的密码不一致');
+            return;
+        }
 
         const data = { is_superuser: isSuperuser, is_active: isActive };
         if (password) {
@@ -223,7 +270,7 @@
 
         try {
             const response = await fetchWithAuth(`/api/v1/users/${userId}`, {
-                method: 'PUT',
+                method: 'PATCH',
                 body: JSON.stringify(data),
             });
 

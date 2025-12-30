@@ -43,6 +43,7 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ username, password }),
+                    credentials: 'same-origin',  // 允许设置和发送 Cookie
                 });
 
                 const data = await response.json();
@@ -53,8 +54,16 @@
                     localStorage.setItem('refresh_token', data.refresh_token);
                     localStorage.setItem('username', username);
 
-                    // 跳转到管理后台
-                    window.location.href = '/admin/';
+                    // 检查是否有重定向参数
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const redirect = urlParams.get('redirect');
+                    if (redirect) {
+                        // 跳转到原来想访问的页面
+                        window.location.href = decodeURIComponent(redirect);
+                    } else {
+                        // 跳转到管理后台
+                        window.location.href = '/admin/';
+                    }
                 } else {
                     errorDiv.textContent = data.detail || '登录失败';
                     errorDiv.style.display = 'block';

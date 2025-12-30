@@ -71,6 +71,7 @@ async function refreshToken() {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({ refresh_token: refreshToken }),
+            credentials: 'same-origin',  // 允许设置和发送 Cookie
         });
 
         if (response.ok) {
@@ -89,10 +90,31 @@ async function refreshToken() {
 }
 
 // 退出登录
-function logout() {
+async function logout() {
+    const token = localStorage.getItem('access_token');
+
+    // 调用后端登出接口清除 Cookie
+    if (token) {
+        try {
+            await fetch('/api/v1/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'same-origin',  // 允许设置和发送 Cookie
+            });
+        } catch (error) {
+            console.error('登出请求失败:', error);
+        }
+    }
+
+    // 清除本地存储
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('username');
+
+    // 跳转到登录页
     window.location.href = '/admin/login';
 }
 

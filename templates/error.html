@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Aegis</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .error-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        }
+
+        .error-box {
+            background: white;
+            padding: 3rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 450px;
+            width: 90%;
+        }
+
+        .error-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1.5rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .error-icon.auth {
+            background: #fff3e0;
+        }
+
+        .error-icon.auth svg {
+            color: #f57c00;
+        }
+
+        .error-icon.forbidden {
+            background: #ffebee;
+        }
+
+        .error-icon.forbidden svg {
+            color: #d32f2f;
+        }
+
+        .error-icon svg {
+            width: 40px;
+            height: 40px;
+        }
+
+        .error-box h1 {
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+            font-size: 1.5rem;
+        }
+
+        .error-box .status-code {
+            color: #999;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        .error-box .message {
+            color: #666;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        .error-box .path {
+            background: #f8f9fa;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #555;
+            margin-bottom: 2rem;
+            word-break: break-all;
+        }
+
+        .action-btn {
+            display: inline-block;
+            padding: 0.875rem 2rem;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 0 0.5rem;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(30, 60, 114, 0.4);
+        }
+
+        .action-btn.secondary {
+            background: #6c757d;
+        }
+
+        .action-btn.secondary:hover {
+            box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+        }
+
+        .back-link {
+            display: block;
+            margin-top: 1.5rem;
+            color: #666;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        .back-link:hover {
+            color: #1e3c72;
+        }
+
+        .actions {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+    </style>
+</head>
+<body class="error-container">
+    <div class="error-box">
+        {% if error_type == 'auth' %}
+        <div class="error-icon auth">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+        </div>
+        <h1>需要登录</h1>
+        {% else %}
+        <div class="error-icon forbidden">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+        </div>
+        <h1>访问被拒绝</h1>
+        {% endif %}
+
+        <p class="status-code">错误代码: {{ status_code }}</p>
+        <p class="message">{{ message }}</p>
+        <div class="path">{{ path }}</div>
+
+        <div class="actions">
+            {% if error_type == 'auth' %}
+            <a href="/admin/login?redirect={{ redirect_url }}" class="action-btn">前往登录</a>
+            {% endif %}
+            <a href="javascript:history.back()" class="action-btn secondary">返回上一页</a>
+        </div>
+
+        {% if error_type != 'auth' %}
+        <a href="/admin/" class="back-link">返回管理后台</a>
+        {% endif %}
+    </div>
+</body>
+</html>

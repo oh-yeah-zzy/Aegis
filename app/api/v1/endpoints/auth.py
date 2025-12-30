@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +44,7 @@ def hash_token(token: str) -> str:
 @router.post("/login", response_model=LoginResponse, summary="用户登录")
 async def login(
     request: Request,
+    response: Response,
     data: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
@@ -132,6 +133,17 @@ async def login(
 
     await db.commit()
 
+    # 设置 Cookie，用于浏览器直接访问时的认证
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=settings.jwt_access_token_expire_minutes * 60,
+        httponly=True,  # 防止 JavaScript 访问，提高安全性
+        samesite="lax",  # 防止 CSRF 攻击
+        secure=False,  # 生产环境应设置为 True（仅 HTTPS）
+        path="/",
+    )
+
     return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -142,6 +154,7 @@ async def login(
 @router.post("/refresh", response_model=RefreshResponse, summary="刷新令牌")
 async def refresh_token(
     request: Request,
+    response: Response,
     data: RefreshRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
@@ -247,6 +260,17 @@ async def refresh_token(
 
         await db.commit()
 
+        # 更新 Cookie
+        response.set_cookie(
+            key="access_token",
+            value=new_access_token,
+            max_age=settings.jwt_access_token_expire_minutes * 60,
+            httponly=True,
+            samesite="lax",
+            secure=False,
+            path="/",
+        )
+
         return RefreshResponse(
             access_token=new_access_token,
             refresh_token=new_refresh_token,
@@ -263,13 +287,14 @@ async def refresh_token(
 @router.post("/logout", summary="用户登出")
 async def logout(
     request: Request,
+    response: Response,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """
     用户登出
 
-    撤销当前用户的所有刷新令牌
+    撤销当前用户的所有刷新令牌，并清除认证 Cookie
     """
     # 撤销所有有效的刷新令牌
     result = await db.execute(
@@ -297,6 +322,9 @@ async def logout(
     db.add(event)
 
     await db.commit()
+
+    # 清除认证 Cookie
+    response.delete_cookie(key="access_token", path="/")
 
     return {"message": "登出成功"}
 

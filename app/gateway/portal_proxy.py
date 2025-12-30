@@ -6,11 +6,14 @@
 
 import re
 from typing import Annotated, Optional
+from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,9 +22,54 @@ from app.core.jwt import decode_token, TokenError
 from app.db.session import get_db
 from app.db.models.user import User
 from app.db.models.audit import AuditLog
+from app.gateway.policy import find_matching_auth_policy, AccessDecision
+from app.core.rbac import check_permission, get_user_permissions
 
 router = APIRouter(tags=["服务代理"])
 security = HTTPBearer(auto_error=False)
+templates = Jinja2Templates(directory="templates")
+
+
+def is_browser_request(request: Request) -> bool:
+    """判断是否为浏览器请求"""
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept
+
+
+def auth_error_response(
+    request: Request,
+    status_code: int,
+    message: str,
+    detail: str,
+) -> Response:
+    """
+    根据请求类型返回适当的错误响应
+
+    浏览器请求返回友好的 HTML 页面，API 请求返回 JSON
+    """
+    if is_browser_request(request):
+        # 浏览器请求，返回友好的 HTML 页面
+        redirect_url = quote(str(request.url), safe="")
+        # 根据状态码确定错误类型
+        error_type = "auth" if status_code == 401 else "forbidden"
+        title = "需要登录" if status_code == 401 else "访问被拒绝"
+
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "title": title,
+                "error_type": error_type,
+                "status_code": status_code,
+                "message": message,
+                "path": str(request.url.path),
+                "redirect_url": redirect_url,
+            },
+            status_code=status_code,
+        )
+    else:
+        # API 请求，抛出 HTTP 异常返回 JSON
+        raise HTTPException(status_code=status_code, detail=detail)
 
 # 服务信息缓存（简单内存缓存）
 _service_cache: dict = {}
@@ -121,20 +169,34 @@ async def service_proxy(
             detail=f"服务不存在: {service_id}",
         )
 
-    # 验证用户认证（可选，根据需求配置）
+    # 解析用户认证信息
     user = None
+    is_service_request = False
     principal_type = "anonymous"
     principal_id = None
     principal_label = None
 
+    # 获取 token：优先从 Authorization 头获取，其次从 Cookie 获取
+    token = None
     if credentials:
+        token = credentials.credentials
+    elif request.cookies.get("access_token"):
+        token = request.cookies.get("access_token")
+
+    if token:
         try:
-            payload = decode_token(credentials.credentials)
+            payload = decode_token(token)
             token_type = payload.get("type")
 
             if token_type == "access":
                 subject = payload.get("sub", "")
-                if not subject.startswith("service:"):
+                if subject.startswith("service:"):
+                    # 服务令牌
+                    is_service_request = True
+                    principal_type = "service"
+                    principal_id = subject.replace("service:", "")
+                    principal_label = payload.get("service_code")
+                else:
                     # 用户令牌
                     result = await db.execute(
                         select(User).where(User.id == subject)
@@ -142,12 +204,118 @@ async def service_proxy(
                     user = result.scalar_one_or_none()
 
                     if user:
+                        # 检查令牌版本
+                        token_version = payload.get("token_version", 0)
+                        if token_version < user.token_version:
+                            raise HTTPException(
+                                status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="令牌已失效",
+                            )
                         principal_type = "user"
                         principal_id = user.id
                         principal_label = user.username
 
-        except TokenError:
-            pass  # 忽略令牌错误，允许匿名访问（根据策略）
+        except TokenError as e:
+            # 令牌无效，继续作为匿名用户处理，后续策略检查会拒绝
+            pass
+
+    # 查找并检查认证策略
+    policy = await find_matching_auth_policy(db, full_path)
+
+    if not policy:
+        # 没有匹配的策略，默认拒绝访问
+        if settings.audit_log_enabled:
+            audit_log = AuditLog(
+                request_id=request_id,
+                principal_type=principal_type,
+                principal_id=principal_id,
+                principal_label=principal_label,
+                client_ip=request.client.host if request.client else "unknown",
+                user_agent=request.headers.get("user-agent"),
+                method=request.method,
+                host=request.url.netloc,
+                path=full_path,
+                query_string=request.url.query,
+                status_code=403,
+                latency_ms=0,
+                decision="deny",
+                deny_reason="没有匹配的认证策略",
+            )
+            db.add(audit_log)
+            await db.commit()
+
+        return auth_error_response(
+            request,
+            status.HTTP_403_FORBIDDEN,
+            "访问此资源需要配置认证策略，请联系管理员。",
+            "没有匹配的认证策略，拒绝访问",
+        )
+
+    # 检查是否需要用户认证
+    if policy.auth_required:
+        if user is None and not is_service_request:
+            if settings.audit_log_enabled:
+                audit_log = AuditLog(
+                    request_id=request_id,
+                    principal_type=principal_type,
+                    client_ip=request.client.host if request.client else "unknown",
+                    user_agent=request.headers.get("user-agent"),
+                    method=request.method,
+                    host=request.url.netloc,
+                    path=full_path,
+                    query_string=request.url.query,
+                    status_code=401,
+                    latency_ms=0,
+                    decision="deny",
+                    deny_reason="需要用户认证",
+                )
+                db.add(audit_log)
+                await db.commit()
+
+            return auth_error_response(
+                request,
+                status.HTTP_401_UNAUTHORIZED,
+                "访问此服务需要先登录，请使用您的账号登录后再试。",
+                "需要用户认证",
+            )
+
+    # 检查是否需要服务间认证
+    if policy.s2s_required:
+        if not is_service_request:
+            return auth_error_response(
+                request,
+                status.HTTP_403_FORBIDDEN,
+                "此接口仅供内部服务调用，不支持直接访问。",
+                "需要服务间认证",
+            )
+
+    # 检查权限
+    required_permissions = [p.code for p in policy.permissions]
+    if required_permissions:
+        if user is None and not is_service_request:
+            return auth_error_response(
+                request,
+                status.HTTP_401_UNAUTHORIZED,
+                "访问此资源需要特定权限，请先登录。",
+                "需要认证才能检查权限",
+            )
+
+        # 超级管理员跳过权限检查
+        if user and not user.is_superuser:
+            user_permissions = await get_user_permissions(db, user.id)
+            has_permission = check_permission(
+                user_permissions,
+                required_permissions,
+                policy.permission_mode,
+            )
+
+            if not has_permission:
+                return auth_error_response(
+                    request,
+                    status.HTTP_403_FORBIDDEN,
+                    f"您没有访问此资源的权限。所需权限: {', '.join(required_permissions)}",
+                    f"缺少所需权限: {required_permissions}",
+                )
 
     # 构建上游 URL
     protocol = service.get("protocol", "http")

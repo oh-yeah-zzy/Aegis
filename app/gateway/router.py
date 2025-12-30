@@ -93,9 +93,16 @@ async def gateway_proxy(
     principal_id = None
     principal_label = None
 
+    # 获取 token：优先从 Authorization 头获取，其次从 Cookie 获取
+    token = None
     if credentials:
+        token = credentials.credentials
+    elif request.cookies.get("access_token"):
+        token = request.cookies.get("access_token")
+
+    if token:
         try:
-            payload = decode_token(credentials.credentials)
+            payload = decode_token(token)
             token_type = payload.get("type")
 
             if token_type == "access":

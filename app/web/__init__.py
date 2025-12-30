@@ -20,6 +20,10 @@ router = APIRouter()
 @router.get("/admin/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """登录页面"""
+    # 如果用户已通过 Cookie 登录，重定向到管理后台
+    if request.cookies.get("access_token"):
+        return RedirectResponse(url="/admin/", status_code=302)
+
     return templates.TemplateResponse("login.html", {"request": request})
 
 

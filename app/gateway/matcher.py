@@ -41,8 +41,10 @@ class RouteMatcher:
         """
         # 将 ** 转换为正则表达式
         if "**" in pattern:
-            regex_pattern = pattern.replace("**", ".*")
+            # 使用临时占位符保护 ** 的转换，避免被后续的 * 替换影响
+            regex_pattern = pattern.replace("**", "\x00DOUBLESTAR\x00")
             regex_pattern = regex_pattern.replace("*", "[^/]*")
+            regex_pattern = regex_pattern.replace("\x00DOUBLESTAR\x00", ".*")
             regex_pattern = f"^{regex_pattern}$"
             return bool(re.match(regex_pattern, path))
 

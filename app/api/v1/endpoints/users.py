@@ -228,9 +228,21 @@ async def update_user(
         user.token_version += 1
 
     if data.is_active is not None:
+        # 超级管理员不能被禁用
+        if user.is_superuser and not data.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="超级管理员账户不能被禁用",
+            )
         user.is_active = data.is_active
 
     if data.is_superuser is not None:
+        # 超级管理员不能被取消超级管理员权限
+        if user.is_superuser and not data.is_superuser:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="不能取消超级管理员权限",
+            )
         user.is_superuser = data.is_superuser
 
     # 更新角色

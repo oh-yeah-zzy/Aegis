@@ -7,7 +7,7 @@ Aegis 主应用入口
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -205,9 +205,14 @@ async def health_check():
 
 
 @app.get("/", tags=["根路径"])
-async def root():
+async def root(request: Request):
     """根路径 - 重定向到管理界面"""
     from fastapi.responses import RedirectResponse
+
+    # 检查是否已通过 Cookie 登录
+    if request.cookies.get("access_token"):
+        return RedirectResponse(url="/admin/")
+
     return RedirectResponse(url="/admin/login")
 
 
