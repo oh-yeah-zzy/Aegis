@@ -4,22 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }} - Aegis</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="{{ base_path }}/static/css/style.css">
 </head>
 <body>
     <nav class="navbar">
         <div class="nav-brand">
-            <a href="/admin/">Aegis</a>
+            <a href="{{ base_path }}/admin/">Aegis</a>
             <span>权限网关</span>
         </div>
         <ul class="nav-links">
-            <li><a href="/admin/" class="{% if active == 'dashboard' %}active{% endif %}">仪表盘</a></li>
-            <li><a href="/admin/portal" class="{% if active == 'portal' %}active{% endif %}">服务目录</a></li>
-            <li><a href="/admin/users" class="{% if active == 'users' %}active{% endif %}">用户管理</a></li>
-            <li><a href="/admin/roles" class="{% if active == 'roles' %}active{% endif %}">角色管理</a></li>
-            <li><a href="/admin/policies" class="{% if active == 'policies' %}active{% endif %}">认证策略</a></li>
-            <li><a href="/admin/audit" class="{% if active == 'audit' %}active{% endif %}">审计日志</a></li>
-            <li><a href="/docs" target="_blank">API 文档</a></li>
+            <li><a href="{{ base_path }}/admin/" class="{% if active == 'dashboard' %}active{% endif %}">仪表盘</a></li>
+            <li><a href="{{ base_path }}/admin/users" class="{% if active == 'users' %}active{% endif %}">用户管理</a></li>
+            <li><a href="{{ base_path }}/admin/roles" class="{% if active == 'roles' %}active{% endif %}">角色管理</a></li>
+            <li><a href="{{ base_path }}/admin/policies" class="{% if active == 'policies' %}active{% endif %}">认证策略</a></li>
+            <li><a href="{{ base_path }}/admin/audit" class="{% if active == 'audit' %}active{% endif %}">审计日志</a></li>
+            <li><a href="{{ base_path }}/docs" target="_blank">API 文档</a></li>
         </ul>
         <div class="nav-user">
             <span class="username">{{ username }}</span>
@@ -35,7 +34,11 @@
         <p>Aegis v0.1.0 - 权限控制网关</p>
     </footer>
 
-    <script src="/static/js/main.js"></script>
+    <script>
+        // 将 base_path 传递给 JavaScript
+        window.BASE_PATH = "{{ base_path }}";
+    </script>
+    <script src="{{ base_path }}/static/js/main.js"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

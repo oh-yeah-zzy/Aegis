@@ -29,11 +29,6 @@ from app.schemas.service import (
     S2STokenRequest,
     S2STokenResponse,
 )
-from app.schemas.route import (
-    RouteCreate,
-    RouteUpdate,
-    RouteResponse,
-)
 from app.schemas.common import (
     APIResponse,
     PaginationParams,
@@ -66,10 +61,6 @@ __all__ = [
     "ServiceCredentialResponse",
     "S2STokenRequest",
     "S2STokenResponse",
-    # Route
-    "RouteCreate",
-    "RouteUpdate",
-    "RouteResponse",
     # Common
     "APIResponse",
     "PaginationParams",

@@ -31,6 +31,7 @@ from app.schemas.auth import (
     RefreshRequest,
     RefreshResponse,
     CurrentUser,
+    ValidateResponse,
 )
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -339,3 +340,90 @@ async def get_me(
     返回当前登录用户的详细信息，包括角色和权限
     """
     return current_user_info
+
+
+@router.post("/validate", response_model=ValidateResponse, summary="验证 Token")
+async def validate_token(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    验证 JWT Token 是否有效
+
+    供网关（Hermes）调用，用于验证用户的认证状态。
+    Token 从 Authorization 头中提取（Bearer 格式）。
+
+    返回:
+    - 200: Token 有效，返回用户信息
+    - 401: Token 无效或已过期
+    """
+    # 从请求头提取 Token
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="缺少认证头",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="认证头格式错误，应为 Bearer <token>",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = auth_header[7:]
+
+    try:
+        # 解码 Token
+        payload = decode_token(token)
+
+        # 检查是否是访问令牌
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="令牌类型无效",
+            )
+
+        user_id = payload.get("sub")
+
+        # 查询用户，验证是否存在且未被禁用
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户不存在",
+            )
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户已被禁用",
+            )
+
+        # 检查 token_version 是否匹配（用于令牌撤销）
+        token_version = payload.get("token_version")
+        if token_version is not None and token_version != user.token_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="令牌已被撤销",
+            )
+
+        # Token 有效，返回用户信息
+        return ValidateResponse(
+            valid=True,
+            user_id=user.id,
+            username=user.username,
+            roles=payload.get("roles", []),
+            permissions=payload.get("permissions", []),
+        )
+
+    except TokenError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        )

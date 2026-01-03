@@ -7,7 +7,7 @@ Aegis 启动脚本
 用法:
     python run.py                    # 使用默认配置
     python run.py --port 8080        # 指定端口
-    python run.py -p 8080 -h 0.0.0.0 # 指定端口和主机
+    python run.py -p 8080 -H 0.0.0.0 # 指定端口和主机（内网可访问）
     python run.py --debug            # 启用调试模式
 """
 
@@ -35,7 +35,7 @@ def parse_args():
         "-H", "--host",
         type=str,
         default=None,
-        help="监听地址 (默认: 0.0.0.0)",
+        help="监听地址 (默认: 127.0.0.1，仅本地访问)",
     )
 
     parser.add_argument(

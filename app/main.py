@@ -1,7 +1,7 @@
 """
 Aegis 主应用入口
 
-权限控制网关服务 - 服务注册中心入口
+IAM 系统 - 身份认证与访问管理
 """
 
 from contextlib import asynccontextmanager
@@ -15,8 +15,6 @@ from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
 from app.api.v1.router import api_router
-from app.gateway.router import router as gateway_router
-from app.gateway.portal_proxy import router as portal_proxy_router
 from app.middleware.request_id import RequestIDMiddleware
 from app.web import router as web_router
 
@@ -90,10 +88,6 @@ async def init_default_data():
             ("aegis:services:read", "查看服务", "aegis", "services", "read"),
             ("aegis:services:write", "编辑服务", "aegis", "services", "write"),
             ("aegis:services:delete", "删除服务", "aegis", "services", "delete"),
-            # 路由管理权限
-            ("aegis:routes:read", "查看路由", "aegis", "routes", "read"),
-            ("aegis:routes:write", "编辑路由", "aegis", "routes", "write"),
-            ("aegis:routes:delete", "删除路由", "aegis", "routes", "delete"),
             # 审计日志权限
             ("aegis:audit:read", "查看审计日志", "aegis", "audit", "read"),
         ]
@@ -162,13 +156,13 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="""
-Aegis 权限控制网关服务
+Aegis 身份认证与访问管理（IAM）系统
 
 ## 功能特性
 
 - **用户认证**: JWT 令牌认证，支持访问令牌和刷新令牌
 - **RBAC 权限控制**: 基于角色的访问控制，用户-角色-权限三层结构
-- **API 网关鉴权**: 请求拦截、权限校验、路由转发
+- **权限验证 API**: 供其他服务调用的权限验证接口
 - **服务间认证**: 服务间调用的身份验证
 - **审计日志**: 记录所有请求和认证事件
 
@@ -209,11 +203,14 @@ async def root(request: Request):
     """根路径 - 重定向到管理界面"""
     from fastapi.responses import RedirectResponse
 
+    # 获取代理前缀（通过 Hermes 访问时会有 X-Forwarded-Prefix header）
+    base_path = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
+
     # 检查是否已通过 Cookie 登录
     if request.cookies.get("access_token"):
-        return RedirectResponse(url="/admin/")
+        return RedirectResponse(url=f"{base_path}/admin/")
 
-    return RedirectResponse(url="/admin/login")
+    return RedirectResponse(url=f"{base_path}/admin/login")
 
 
 # 注册 API 路由
@@ -224,10 +221,3 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 # 注册 Web 管理界面路由
 app.include_router(web_router)
-
-# 注册服务门户代理路由（处理 /s/{service_id}/ 格式的请求）
-app.include_router(portal_proxy_router)
-
-# 注册网关路由（放在最后，作为兜底路由）
-# 注意：网关路由使用通配符，会匹配所有未被 API 路由处理的请求
-app.include_router(gateway_router)

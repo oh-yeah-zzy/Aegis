@@ -63,3 +63,13 @@ class CurrentUser(BaseModel):
     is_superuser: bool
     roles: list[str] = []
     permissions: list[str] = []
+
+
+class ValidateResponse(BaseModel):
+    """Token 验证响应"""
+
+    valid: bool = Field(..., description="Token 是否有效")
+    user_id: Optional[str] = Field(default=None, description="用户 ID")
+    username: Optional[str] = Field(default=None, description="用户名")
+    roles: list[str] = Field(default_factory=list, description="角色列表")
+    permissions: list[str] = Field(default_factory=list, description="权限列表")

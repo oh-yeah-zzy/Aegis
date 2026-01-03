@@ -6,7 +6,7 @@ API v1 路由汇总
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, roles, permissions, s2s, routes, audit, auth_policies, portal
+from app.api.v1.endpoints import auth, users, roles, permissions, s2s, audit
 
 # 创建 v1 路由
 api_router = APIRouter(prefix="/api/v1")
@@ -18,7 +18,4 @@ api_router.include_router(roles.router)
 api_router.include_router(permissions.router)
 api_router.include_router(s2s.router)
 api_router.include_router(s2s.services_router)
-api_router.include_router(routes.router)
 api_router.include_router(audit.router)
-api_router.include_router(auth_policies.router)
-api_router.include_router(portal.router)

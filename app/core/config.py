@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     app_name: str = "Aegis"
     app_version: str = "0.1.0"
     debug: bool = False
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8000
 
     # 数据库配置
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
 
     # 服务注册配置（ServiceAtlas）
     registry_enabled: bool = True  # 是否启用服务注册
-    registry_url: str = "http://localhost:9000"  # ServiceAtlas 地址
+    registry_url: str = "http://localhost:8888"  # ServiceAtlas 地址
     registry_service_id: str = "aegis"  # 服务ID
     registry_service_name: str = "Aegis 权限网关"  # 服务名称
     registry_service_host: str = "127.0.0.1"  # 本服务对外暴露的地址

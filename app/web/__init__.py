@@ -17,12 +17,36 @@ templates = Jinja2Templates(directory=str(PROJECT_ROOT / "templates"))
 router = APIRouter()
 
 
+def get_base_path(request: Request) -> str:
+    """
+    获取 base path，优先从代理 header 读取
+
+    当通过 Hermes 网关代理访问时，X-Forwarded-Prefix 会包含路径前缀（如 /aegis）
+    直接访问时返回空字符串
+    """
+    forwarded_prefix = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
+    return forwarded_prefix
+
+
+def get_template_context(request: Request, title: str, active: str) -> dict:
+    """生成模板上下文，包含 base_path"""
+    base_path = get_base_path(request)
+    return {
+        "request": request,
+        "title": title,
+        "active": active,
+        "username": "管理员",
+        "base_path": base_path,
+    }
+
+
 @router.get("/admin/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """登录页面"""
+    base_path = get_base_path(request)
     # 如果用户已通过 Cookie 登录，重定向到管理后台
     if request.cookies.get("access_token"):
-        return RedirectResponse(url="/admin/", status_code=302)
+        return RedirectResponse(url=f"{base_path}/admin/", status_code=302)
 
     return templates.TemplateResponse("login.html", {"request": request})
 
@@ -30,64 +54,38 @@ async def login_page(request: Request):
 @router.get("/admin/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     """仪表盘页面"""
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
-        "title": "仪表盘",
-        "active": "dashboard",
-        "username": "管理员",
-    })
+    return templates.TemplateResponse(
+        "dashboard.html", get_template_context(request, "仪表盘", "dashboard")
+    )
 
 
 @router.get("/admin/users", response_class=HTMLResponse)
 async def users_page(request: Request):
     """用户管理页面"""
-    return templates.TemplateResponse("users.html", {
-        "request": request,
-        "title": "用户管理",
-        "active": "users",
-        "username": "管理员",
-    })
+    return templates.TemplateResponse(
+        "users.html", get_template_context(request, "用户管理", "users")
+    )
 
 
 @router.get("/admin/roles", response_class=HTMLResponse)
 async def roles_page(request: Request):
     """角色管理页面"""
-    return templates.TemplateResponse("roles.html", {
-        "request": request,
-        "title": "角色管理",
-        "active": "roles",
-        "username": "管理员",
-    })
+    return templates.TemplateResponse(
+        "roles.html", get_template_context(request, "角色管理", "roles")
+    )
 
 
 @router.get("/admin/policies", response_class=HTMLResponse)
 async def policies_page(request: Request):
     """认证策略管理页面"""
-    return templates.TemplateResponse("policies.html", {
-        "request": request,
-        "title": "认证策略",
-        "active": "policies",
-        "username": "管理员",
-    })
+    return templates.TemplateResponse(
+        "policies.html", get_template_context(request, "认证策略", "policies")
+    )
 
 
 @router.get("/admin/audit", response_class=HTMLResponse)
 async def audit_page(request: Request):
     """审计日志页面"""
-    return templates.TemplateResponse("audit.html", {
-        "request": request,
-        "title": "审计日志",
-        "active": "audit",
-        "username": "管理员",
-    })
-
-
-@router.get("/admin/portal", response_class=HTMLResponse)
-async def portal_page(request: Request):
-    """服务目录页面"""
-    return templates.TemplateResponse("portal.html", {
-        "request": request,
-        "title": "服务目录",
-        "active": "portal",
-        "username": "管理员",
-    })
+    return templates.TemplateResponse(
+        "audit.html", get_template_context(request, "审计日志", "audit")
+    )

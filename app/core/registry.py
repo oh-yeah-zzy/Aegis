@@ -2,16 +2,13 @@
 服务注册模块
 
 将 Aegis 注册到 ServiceAtlas 服务注册中心，并维护心跳
-同时提供从 ServiceAtlas 获取路由规则的功能
 
 优先使用 ServiceAtlas SDK，若未安装则使用内置实现
 """
 
 import asyncio
-import time
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
-from dataclasses import dataclass
 import logging
 
 import httpx
@@ -28,67 +25,6 @@ try:
 except ImportError:
     SDK_AVAILABLE = False
     logger.debug("[Aegis] SDK 未安装，使用内置实现")
-
-
-@dataclass
-class TargetServiceInfo:
-    """目标服务信息"""
-    id: str
-    name: str
-    host: str
-    port: int
-    protocol: str
-    status: str
-    base_url: str
-
-
-@dataclass
-class RemoteRoute:
-    """从 ServiceAtlas 获取的路由规则"""
-    id: int
-    path_pattern: str
-    target_service_id: str
-    target_service: TargetServiceInfo
-    strip_prefix: bool
-    strip_path: Optional[str]
-    priority: int
-    enabled: bool
-
-
-class RouteCache:
-    """路由规则缓存"""
-
-    def __init__(self, ttl: int = 30):
-        """
-        初始化路由缓存
-
-        Args:
-            ttl: 缓存过期时间（秒）
-        """
-        self.ttl = ttl
-        self._routes: List[RemoteRoute] = []
-        self._last_update: float = 0
-        self._lock = asyncio.Lock()
-
-    def is_expired(self) -> bool:
-        """检查缓存是否过期"""
-        return time.time() - self._last_update > self.ttl
-
-    def get(self) -> Optional[List[RemoteRoute]]:
-        """获取缓存的路由规则（如果未过期）"""
-        if self.is_expired():
-            return None
-        return self._routes
-
-    def set(self, routes: List[RemoteRoute]):
-        """设置缓存"""
-        self._routes = routes
-        self._last_update = time.time()
-
-    def clear(self):
-        """清除缓存"""
-        self._routes = []
-        self._last_update = 0
 
 
 # ================== 内置实现（SDK 不可用时使用）==================
@@ -191,7 +127,7 @@ if not SDK_AVAILABLE:
                 "service_meta": {
                     **self.metadata,
                     "version": settings.app_version,
-                    "description": "权限控制网关服务",
+                    "description": "身份认证与访问管理系统",
                     "registered_at": datetime.utcnow().isoformat(),
                 },
             }
@@ -253,9 +189,6 @@ class ServiceRegistryClient:
     ServiceAtlas 服务注册客户端
 
     负责将 Aegis 注册到服务注册中心，并定期发送心跳
-    同时提供从 ServiceAtlas 获取路由规则的功能
-
-    此类封装了 SDK 的 AsyncServiceAtlasClient，并添加了路由规则获取功能
     """
 
     def __init__(
@@ -267,11 +200,9 @@ class ServiceRegistryClient:
         port: int,
         protocol: str = "http",
         health_check_path: str = "/health",
-        is_gateway: bool = True,
         base_path: str = "",
         metadata: Optional[dict] = None,
         heartbeat_interval: int = 30,
-        route_cache_ttl: int = 30,
         trust_env: bool = False,
     ):
         """
@@ -285,11 +216,9 @@ class ServiceRegistryClient:
             port: 服务端口
             protocol: 协议类型
             health_check_path: 健康检查路径
-            is_gateway: 是否作为网关
             base_path: 代理路径前缀（通过其他网关代理时设置）
             metadata: 扩展元数据
             heartbeat_interval: 心跳间隔（秒）
-            route_cache_ttl: 路由缓存过期时间（秒）
             trust_env: 是否信任环境变量中的代理配置
         """
         self.registry_url = registry_url.rstrip("/")
@@ -297,6 +226,7 @@ class ServiceRegistryClient:
         self.trust_env = trust_env
 
         # 创建 SDK 客户端（或内置实现）
+        # Aegis 是 IAM 系统，不是网关，因此 is_gateway=False
         self._sdk_client = AsyncServiceAtlasClient(
             registry_url=registry_url,
             service_id=service_id,
@@ -305,7 +235,7 @@ class ServiceRegistryClient:
             port=port,
             protocol=protocol,
             health_check_path=health_check_path,
-            is_gateway=is_gateway,
+            is_gateway=False,  # Aegis 不是网关
             base_path=base_path,
             metadata=metadata,
             heartbeat_interval=heartbeat_interval,
@@ -313,10 +243,6 @@ class ServiceRegistryClient:
         )
 
         self._running = False
-        self._http_client: Optional[httpx.AsyncClient] = None
-
-        # 路由规则缓存
-        self._route_cache = RouteCache(ttl=route_cache_ttl)
 
     async def start(self):
         """
@@ -328,7 +254,6 @@ class ServiceRegistryClient:
             return
 
         self._running = True
-        self._http_client = httpx.AsyncClient(timeout=10.0, trust_env=self.trust_env)
 
         # 使用 SDK 客户端启动
         await self._sdk_client.start()
@@ -346,82 +271,6 @@ class ServiceRegistryClient:
 
         # 使用 SDK 客户端停止
         await self._sdk_client.stop()
-
-        # 关闭 HTTP 客户端
-        if self._http_client:
-            await self._http_client.aclose()
-            self._http_client = None
-
-    async def fetch_routes(self, force_refresh: bool = False) -> List[RemoteRoute]:
-        """
-        从 ServiceAtlas 获取路由规则
-
-        Args:
-            force_refresh: 是否强制刷新缓存
-
-        Returns:
-            路由规则列表
-        """
-        # 如果未强制刷新且缓存未过期，直接返回缓存
-        if not force_refresh:
-            cached = self._route_cache.get()
-            if cached is not None:
-                return cached
-
-        # 从 ServiceAtlas 获取路由规则
-        url = f"{self.registry_url}/api/v1/gateway/routes"
-        headers = {"X-Gateway-ID": self.service_id}
-
-        try:
-            # 如果客户端未初始化，创建一个临时的
-            client = self._http_client or httpx.AsyncClient(timeout=10.0, trust_env=self.trust_env)
-            response = await client.get(url, headers=headers)
-
-            if response.status_code == 200:
-                routes_data = response.json()
-                routes = []
-
-                for r in routes_data:
-                    target = r.get("target_service", {})
-                    routes.append(RemoteRoute(
-                        id=r["id"],
-                        path_pattern=r["path_pattern"],
-                        target_service_id=r["target_service_id"],
-                        target_service=TargetServiceInfo(
-                            id=target.get("id", ""),
-                            name=target.get("name", ""),
-                            host=target.get("host", ""),
-                            port=target.get("port", 0),
-                            protocol=target.get("protocol", "http"),
-                            status=target.get("status", "unknown"),
-                            base_url=target.get("base_url", ""),
-                        ),
-                        strip_prefix=r.get("strip_prefix", False),
-                        strip_path=r.get("strip_path"),
-                        priority=r.get("priority", 0),
-                        enabled=r.get("enabled", True),
-                    ))
-
-                # 更新缓存
-                self._route_cache.set(routes)
-                return routes
-
-            elif response.status_code == 403:
-                print(f"[Aegis] 获取路由规则失败: 无权限（服务未标记为网关）")
-            elif response.status_code == 404:
-                print(f"[Aegis] 获取路由规则失败: 网关服务不存在")
-            else:
-                print(f"[Aegis] 获取路由规则失败: {response.status_code}")
-
-        except Exception as e:
-            print(f"[Aegis] 获取路由规则异常: {e}")
-
-        # 如果获取失败，返回缓存的旧数据（如果有的话）
-        return self._route_cache._routes or []
-
-    def clear_route_cache(self):
-        """清除路由规则缓存"""
-        self._route_cache.clear()
 
 
 # 全局注册客户端实例
@@ -458,11 +307,12 @@ async def init_registry_client():
         port=settings.port,
         protocol="http",
         health_check_path="/health",
-        is_gateway=True,
         base_path=settings.registry_service_base_path,
         metadata={
-            "type": "gateway",
-            "auth": "jwt",
+            "service_type": "authentication",  # 标记为认证服务
+            "auth_endpoint": "/api/v1/auth/login",  # API 登录端点
+            "login_path": "/admin/login",  # Web 登录页面路径
+            "auth_methods": ["jwt"],
         },
         heartbeat_interval=settings.registry_heartbeat_interval,
         trust_env=False,  # 默认禁用代理，避免环境变量干扰
@@ -478,18 +328,3 @@ async def shutdown_registry_client():
     if _registry_client:
         await _registry_client.stop()
         _registry_client = None
-
-
-async def fetch_remote_routes(force_refresh: bool = False) -> List[RemoteRoute]:
-    """
-    获取远程路由规则（从 ServiceAtlas）
-
-    Args:
-        force_refresh: 是否强制刷新缓存
-
-    Returns:
-        路由规则列表，如果未启用注册中心则返回空列表
-    """
-    if _registry_client:
-        return await _registry_client.fetch_routes(force_refresh)
-    return []

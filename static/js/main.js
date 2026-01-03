@@ -2,23 +2,26 @@
  * Aegis 前端主 JavaScript 文件
  */
 
+// 获取 base path（通过代理访问时为 /aegis，直接访问时为空）
+const BASE_PATH = window.BASE_PATH || '';
+
 // 检查登录状态
 function checkAuth() {
     const token = localStorage.getItem('access_token');
     const currentPath = window.location.pathname;
 
     // 登录页面不需要检查
-    if (currentPath === '/admin/login') {
+    if (currentPath.endsWith('/admin/login')) {
         if (token) {
             // 已登录，跳转到首页
-            window.location.href = '/admin/';
+            window.location.href = BASE_PATH + '/admin/';
         }
         return;
     }
 
     // 其他管理页面需要登录
-    if (currentPath.startsWith('/admin') && !token) {
-        window.location.href = '/admin/login';
+    if (currentPath.includes('/admin') && !token) {
+        window.location.href = BASE_PATH + '/admin/login';
     }
 }
 
@@ -36,6 +39,11 @@ async function fetchWithAuth(url, options = {}) {
 
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // 如果 URL 以 / 开头且不包含 BASE_PATH，添加 BASE_PATH
+    if (url.startsWith('/') && !url.startsWith(BASE_PATH) && BASE_PATH) {
+        url = BASE_PATH + url;
     }
 
     const response = await fetch(url, {
@@ -65,7 +73,7 @@ async function refreshToken() {
     if (!refreshToken) return false;
 
     try {
-        const response = await fetch('/api/v1/auth/refresh', {
+        const response = await fetch(BASE_PATH + '/api/v1/auth/refresh', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -96,7 +104,7 @@ async function logout() {
     // 调用后端登出接口清除 Cookie
     if (token) {
         try {
-            await fetch('/api/v1/auth/logout', {
+            await fetch(BASE_PATH + '/api/v1/auth/logout', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -115,7 +123,7 @@ async function logout() {
     localStorage.removeItem('username');
 
     // 跳转到登录页
-    window.location.href = '/admin/login';
+    window.location.href = BASE_PATH + '/admin/login';
 }
 
 // 格式化时间
