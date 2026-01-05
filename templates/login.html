@@ -5,17 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - Aegis</title>
     <script>
-        // 检测是否通过代理访问，自动计算路径前缀
+        // 从后端注入的 base_path（通过代理访问时为 /aegis 等；直连时为空）
         (function() {
-            const path = window.location.pathname;
-            const prefix = path.startsWith('/aegis/') ? '/aegis' : '';
+            const prefix = "{{ base_path | default('') }}";
+            window.BASE_PATH = prefix;
+
+            // 如果本地已有 token，直接进入管理后台
+            try {
+                const token = localStorage.getItem('access_token');
+                if (token) {
+                    window.location.replace(prefix + '/admin/');
+                    return;
+                }
+            } catch (e) {
+                // ignore
+            }
+
             // 动态加载 CSS
             const link = document.createElement('link');
             link.rel = 'stylesheet';
             link.href = prefix + '/static/css/style.css';
             document.head.appendChild(link);
-            // 保存前缀供后续使用
-            window.apiPrefix = prefix;
         })();
     </script>
 </head>
@@ -42,7 +52,7 @@
     </div>
 
     <script>
-        const apiPrefix = window.apiPrefix || '';
+        const apiPrefix = window.BASE_PATH || '';
 
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -71,10 +81,19 @@
                     const urlParams = new URLSearchParams(window.location.search);
                     const redirect = urlParams.get('redirect');
                     if (redirect) {
-                        window.location.href = decodeURIComponent(redirect);
-                    } else {
-                        window.location.href = apiPrefix + '/admin/';
+                        const target = decodeURIComponent(redirect);
+                        try {
+                            const url = new URL(target, window.location.origin);
+                            if (url.origin === window.location.origin) {
+                                window.location.href = url.pathname + url.search + url.hash;
+                                return;
+                            }
+                        } catch (e) {
+                            // ignore
+                        }
                     }
+
+                    window.location.href = apiPrefix + '/admin/';
                 } else {
                     errorDiv.textContent = data.detail || '登录失败';
                     errorDiv.style.display = 'block';

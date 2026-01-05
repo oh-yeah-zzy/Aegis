@@ -4,8 +4,8 @@ Web 管理界面路由
 提供 Aegis 的前端管理页面
 """
 
-from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from pathlib import Path
@@ -44,11 +44,10 @@ def get_template_context(request: Request, title: str, active: str) -> dict:
 async def login_page(request: Request):
     """登录页面"""
     base_path = get_base_path(request)
-    # 如果用户已通过 Cookie 登录，重定向到管理后台
-    if request.cookies.get("access_token"):
-        return RedirectResponse(url=f"{base_path}/admin/", status_code=302)
-
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "base_path": base_path},
+    )
 
 
 @router.get("/admin/", response_class=HTMLResponse)

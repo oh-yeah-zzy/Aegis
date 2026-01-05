@@ -2,8 +2,16 @@
 Aegis 主应用入口
 
 IAM 系统 - 身份认证与访问管理
+
+安全特性：
+- 启动时安全配置检查
+- 多层安全中间件
+- 登录速率限制和账户锁定
+- IP 黑白名单和自动封禁
+- 威胁检测和自动响应
 """
 
+import warnings
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,14 +20,97 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
+from app.core.security_config import security_settings
 from app.db.base import Base
 from app.db.session import engine
 from app.api.v1.router import api_router
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.security import (
+    IPFilterMiddleware,
+    RequestSizeMiddleware,
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 from app.web import router as web_router
 
 # 项目根目录
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+async def security_startup_check():
+    """
+    启动时安全配置检查
+
+    检查项：
+    1. JWT 密钥是否为默认值（如果未启用自动生成）
+    2. JWT 密钥长度是否足够
+    3. CORS 配置是否安全
+    """
+    from app.core.config import _INSECURE_DEFAULT_KEYS
+
+    issues = []
+
+    # JWT 密钥检查（仅在未启用自动生成时检查）
+    if security_settings.jwt_secret_check_enabled:
+        # 如果启用了自动生成且当前密钥不在不安全列表中，说明已自动生成，跳过检查
+        is_auto_generated = (
+            settings.jwt_auto_generate_secret
+            and settings.jwt_secret_key not in _INSECURE_DEFAULT_KEYS
+        )
+
+        if not is_auto_generated:
+            # 检查是否使用已知的弱密钥
+            if settings.jwt_secret_key in security_settings.jwt_known_weak_keys:
+                msg = (
+                    "⚠️  严重安全警告：JWT 密钥使用默认值！\n"
+                    "   请设置环境变量 JWT_SECRET_KEY 为一个强随机字符串\n"
+                    "   或启用自动生成: JWT_AUTO_GENERATE_SECRET=true"
+                )
+                issues.append(msg)
+                warnings.warn(msg, SecurityWarning)
+
+            # 检查密钥长度
+            if len(settings.jwt_secret_key) < security_settings.jwt_secret_min_length:
+                msg = (
+                    f"⚠️  安全警告：JWT 密钥长度不足\n"
+                    f"   当前: {len(settings.jwt_secret_key)} 字符\n"
+                    f"   建议: 至少 {security_settings.jwt_secret_min_length} 字符"
+                )
+                issues.append(msg)
+                warnings.warn(msg, SecurityWarning)
+
+    # CORS 检查
+    if security_settings.cors_strict_mode and "*" in settings.cors_origins:
+        msg = (
+            "⚠️  安全警告：CORS 允许所有来源（*）\n"
+            "   在生产环境中，请配置具体的允许来源"
+        )
+        issues.append(msg)
+        warnings.warn(msg, SecurityWarning)
+
+    # 生产环境使用自动生成密钥的警告
+    if not settings.debug and settings.jwt_auto_generate_secret:
+        from app.core.config import _INSECURE_DEFAULT_KEYS
+        # 检查原始配置是否是默认值（通过检查当前值是否不在默认列表中来判断是否自动生成了）
+        if settings.jwt_secret_key not in _INSECURE_DEFAULT_KEYS:
+            # 当前使用的是自动生成的密钥
+            msg = (
+                "⚠️  生产环境提示：当前使用自动生成的 JWT 密钥\n"
+                "   - 重启后所有用户需要重新登录\n"
+                "   - 多实例部署时令牌无法共享\n"
+                "   - 建议设置固定密钥: JWT_SECRET_KEY=..."
+            )
+            issues.append(msg)
+
+    # 打印安全检查结果
+    if issues:
+        print("\n" + "=" * 60)
+        print("🔒 安全检查发现以下问题：")
+        for i, issue in enumerate(issues, 1):
+            print(f"\n{i}. {issue}")
+        print("\n" + "=" * 60 + "\n")
+    else:
+        print("🔒 安全检查通过")
 
 
 @asynccontextmanager
@@ -27,10 +118,21 @@ async def lifespan(app: FastAPI):
     """
     应用生命周期管理
 
-    启动时创建数据库表，关闭时清理资源
+    启动时：
+    1. 执行安全配置检查
+    2. 创建数据库表
+    3. 初始化默认数据
+    4. 注册到服务中心
+
+    关闭时：
+    1. 从服务中心注销
+    2. 清理数据库资源
     """
     # 导入服务注册模块
     from app.core.registry import init_registry_client, shutdown_registry_client
+
+    # 启动时：执行安全检查
+    await security_startup_check()
 
     # 启动时：创建数据库表
     async with engine.begin() as conn:
@@ -179,7 +281,7 @@ Aegis 身份认证与访问管理（IAM）系统
     openapi_url="/openapi.json",
 )
 
-# 添加 CORS 中间件
+# 添加 CORS 中间件（最内层）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -190,6 +292,18 @@ app.add_middleware(
 
 # 添加请求ID中间件
 app.add_middleware(RequestIDMiddleware)
+
+# 添加安全响应头中间件
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 添加全局速率限制中间件
+app.add_middleware(RateLimitMiddleware)
+
+# 添加请求体大小限制中间件
+app.add_middleware(RequestSizeMiddleware)
+
+# 添加 IP 过滤中间件（最外层，最先执行）
+app.add_middleware(IPFilterMiddleware)
 
 # 先定义内置端点（必须在网关路由之前）
 @app.get("/health", tags=["健康检查"])
@@ -206,11 +320,7 @@ async def root(request: Request):
     # 获取代理前缀（通过 Hermes 访问时会有 X-Forwarded-Prefix header）
     base_path = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
 
-    # 检查是否已通过 Cookie 登录
-    if request.cookies.get("access_token"):
-        return RedirectResponse(url=f"{base_path}/admin/")
-
-    return RedirectResponse(url=f"{base_path}/admin/login")
+    return RedirectResponse(url=f"{base_path}/admin/")
 
 
 # 注册 API 路由

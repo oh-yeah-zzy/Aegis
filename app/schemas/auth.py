@@ -41,6 +41,12 @@ class RefreshResponse(BaseModel):
     expires_in: int = Field(..., description="访问令牌过期时间（秒）")
 
 
+class LogoutRequest(BaseModel):
+    """登出请求（可选）"""
+
+    refresh_token: Optional[str] = Field(default=None, description="刷新令牌")
+
+
 class TokenPayload(BaseModel):
     """JWT 令牌载荷"""
 

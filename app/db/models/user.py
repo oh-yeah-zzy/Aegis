@@ -79,6 +79,30 @@ class User(Base, TimestampMixin):
         nullable=True,
     )
 
+    # ============ 账户锁定相关字段 ============
+
+    # 账户锁定截止时间（None 表示未锁定）
+    locked_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="账户锁定截止时间，None 表示未锁定",
+    )
+
+    # 连续登录失败次数
+    failed_login_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        doc="连续登录失败次数",
+    )
+
+    # 最后登录失败时间
+    last_failed_login_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="最后登录失败时间",
+    )
+
     # 关系：用户角色（多对多）
     user_roles: Mapped[list["UserRole"]] = relationship(
         "UserRole",

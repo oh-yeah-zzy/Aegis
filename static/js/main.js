@@ -21,12 +21,15 @@ function checkAuth() {
 
     // 其他管理页面需要登录
     if (currentPath.includes('/admin') && !token) {
-        window.location.href = BASE_PATH + '/admin/login';
+        const redirect = encodeURIComponent(window.location.href);
+        window.location.href = `${BASE_PATH}/admin/login?redirect=${redirect}`;
     }
 }
 
 // 页面加载时检查登录状态
 document.addEventListener('DOMContentLoaded', checkAuth);
+// 从浏览器前进/后退缓存（bfcache）恢复时也需要检查
+window.addEventListener('pageshow', checkAuth);
 
 // 带认证的 fetch 请求
 async function fetchWithAuth(url, options = {}) {
@@ -100,30 +103,35 @@ async function refreshToken() {
 // 退出登录
 async function logout() {
     const token = localStorage.getItem('access_token');
+    const refreshToken = localStorage.getItem('refresh_token');
+
+    // 清除本地存储（不要被网络请求阻塞）
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('username');
 
     // 调用后端登出接口清除 Cookie
-    if (token) {
+    if (token || refreshToken) {
         try {
-            await fetch(BASE_PATH + '/api/v1/auth/logout', {
+            fetch(BASE_PATH + '/api/v1/auth/logout', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
                     'Content-Type': 'application/json',
                 },
+                body: JSON.stringify({ refresh_token: refreshToken }),
                 credentials: 'same-origin',  // 允许设置和发送 Cookie
+                keepalive: true,
+            }).catch((error) => {
+                console.error('登出请求失败:', error);
             });
         } catch (error) {
             console.error('登出请求失败:', error);
         }
     }
 
-    // 清除本地存储
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('username');
-
     // 跳转到登录页
-    window.location.href = BASE_PATH + '/admin/login';
+    window.location.replace(BASE_PATH + '/admin/login');
 }
 
 // 格式化时间
