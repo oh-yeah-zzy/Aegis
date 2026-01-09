@@ -1,15 +1,43 @@
-# Aegis IAM 系统
+<div align="center">
+
+# Aegis
+
+**身份认证与访问管理系统**
+
+[![Python](https://img.shields.io/badge/Python-3.9+-blue?logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0+-red?logo=python&logoColor=white)](https://sqlalchemy.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+JWT 认证 · RBAC 权限控制 · 服务间认证 · 审计日志
+
+</div>
+
+---
+
+## 概述
 
 Aegis 是一个基于 Python + FastAPI 的身份认证与访问管理（IAM）系统，为微服务生态提供统一的认证鉴权能力。
 
-## 功能特性
+### 核心特性
 
-- **用户认证 (JWT)**: 登录/登出、访问令牌和刷新令牌、令牌轮换
-- **RBAC 权限控制**: 用户-角色-权限三层结构
-- **权限验证 API**: 供其他服务调用验证用户权限
-- **服务间认证**: client_id/client_secret 认证方式
-- **审计日志**: 请求日志、认证事件、敏感信息脱敏
-- **服务注册**: 自动注册到 ServiceAtlas 并维护心跳
+| 特性 | 说明 |
+|------|------|
+| **JWT 认证** | 登录/登出、访问令牌和刷新令牌、令牌轮换 |
+| **RBAC 权限控制** | 用户-角色-权限三层结构 |
+| **权限验证 API** | 供其他服务调用验证用户权限 |
+| **服务间认证** | client_id/client_secret 认证方式 |
+| **审计日志** | 请求日志、认证事件、敏感信息脱敏 |
+| **服务注册** | 自动注册到 ServiceAtlas 并维护心跳 |
+
+### 技术栈
+
+- **后端**: Python 3.9+ / FastAPI 0.104+
+- **ORM**: SQLAlchemy 2.0 (async)
+- **认证**: python-jose (JWT) / passlib (密码哈希)
+- **HTTP**: httpx (异步客户端)
+
+---
 
 ## 与 Hermes 网关协作
 
@@ -24,12 +52,14 @@ Aegis 是一个基于 Python + FastAPI 的身份认证与访问管理（IAM）�
 - **Hermes**：负责路由转发、负载均衡、限流熔断（透传模式，不做认证）
 - **Aegis**：负责用户认证、权限验证、令牌管理
 
+---
+
 ## 快速开始
 
 ### 安装依赖
 
 ```bash
-cd /path/to/Aegis
+cd Aegis
 pip install -r requirements.txt
 ```
 
@@ -40,15 +70,21 @@ python run.py
 ```
 
 服务启动后：
-- API 文档: http://localhost:8000/docs
-- 健康检查: http://localhost:8000/health
+
+| 地址 | 说明 |
+|------|------|
+| http://localhost:8000/docs | API 文档 |
+| http://localhost:8000/health | 健康检查 |
 
 ### 默认账户
 
-- 用户名: `admin`
-- 密码: `admin123`
+| 用户名 | 密码 |
+|--------|------|
+| `admin` | `admin123` |
 
 > **警告**: 请在生产环境中立即修改默认密码！
+
+---
 
 ## 命令行参数
 
@@ -68,25 +104,20 @@ python run.py [选项]
 ### 示例
 
 ```bash
-# 使用 8080 端口启动
-python run.py --port 8080
-python run.py -p 8080
-
-# 指定端口和监听地址
-python run.py -p 8080 -H 127.0.0.1
-
 # 开发模式（调试 + 热重载）
 python run.py --debug --reload
 
-# 指定注册中心地址
-python run.py --registry-url http://192.168.1.100:9000
+# 指定端口
+python run.py -p 8080 -H 127.0.0.1
 
 # 禁用服务注册（单独运行）
 python run.py --no-registry
 
-# 组合使用
-python run.py -p 8080 --registry-url http://localhost:9000 --debug
+# 指定注册中心地址
+python run.py --registry-url http://192.168.1.100:9000
 ```
+
+---
 
 ## 环境变量配置
 
@@ -104,9 +135,11 @@ cp .env.example .env
 | `HOST` | 监听地址 | 0.0.0.0 |
 | `DEBUG` | 调试模式 | false |
 | `DATABASE_URL` | 数据库连接 | sqlite+aiosqlite:///./aegis.db |
-| `JWT_SECRET_KEY` | JWT 密钥 | (需修改) |
+| `JWT_SECRET_KEY` | JWT 密钥 | (自动生成) |
 | `REGISTRY_ENABLED` | 启用服务注册 | true |
 | `REGISTRY_URL` | ServiceAtlas 地址 | http://localhost:9000 |
+
+---
 
 ## 与 ServiceAtlas 集成
 
@@ -117,12 +150,10 @@ cp .env.example .env
 
 ```bash
 # 终端 1: 启动 ServiceAtlas
-cd /path/to/ServiceAtlas
-python run.py
+cd ServiceAtlas && python run.py
 
 # 终端 2: 启动 Aegis
-cd /path/to/Aegis
-python run.py
+cd Aegis && python run.py
 ```
 
 ### 验证注册
@@ -132,6 +163,8 @@ curl http://localhost:9000/api/v1/services
 ```
 
 应该能看到 `aegis` 服务已注册。
+
+---
 
 ## API 端点
 
@@ -197,6 +230,8 @@ curl http://localhost:9000/api/v1/services
 | GET | `/api/v1/audit/logs` | 获取审计日志 |
 | GET | `/api/v1/audit/events` | 获取认证事件 |
 
+---
+
 ## Docker 部署
 
 ```bash
@@ -214,6 +249,8 @@ docker run -d \
 # 使用 docker-compose
 docker-compose up -d
 ```
+
+---
 
 ## 项目结构
 
@@ -241,15 +278,16 @@ Aegis/
 └── docker-compose.yml
 ```
 
-## 技术栈
-
-- Python 3.9+
-- FastAPI 0.104+
-- SQLAlchemy 2.0 (异步)
-- python-jose (JWT)
-- passlib (密码哈希)
-- httpx (HTTP 客户端)
+---
 
 ## 许可证
 
-MIT License
+[MIT License](LICENSE)
+
+---
+
+<div align="center">
+
+**Built with FastAPI & SQLAlchemy**
+
+</div>
