@@ -313,6 +313,21 @@ async def init_registry_client():
             "auth_endpoint": "/api/v1/auth/login",  # API 登录端点
             "login_path": "/admin/login",  # Web 登录页面路径
             "auth_methods": ["jwt"],
+            # 认证服务自身的认证配置
+            "auth_config": {
+                "require_auth": True,
+                "auth_service_id": settings.registry_service_id,  # 自己验证自己
+                # 登录相关接口必须公开，否则无法登录
+                # API 文档不再公开，需要认证后才能访问
+                "public_paths": [
+                    "/health",
+                    "/admin/login",  # Web 登录页面
+                    "/admin/login/submit",  # Web 登录提交
+                    "/api/v1/auth/login",  # API 登录端点
+                    "/api/v1/auth/refresh",  # 令牌刷新
+                    "/static/**",  # 静态资源
+                ],
+            },
         },
         heartbeat_interval=settings.registry_heartbeat_interval,
         trust_env=False,  # 默认禁用代理，避免环境变量干扰
