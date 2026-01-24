@@ -1,18 +1,14 @@
 """
 Web 管理界面路由
 
-提供 Aegis 的前端管理页面
+⚠️ 已迁移到 Vue SPA：所有 Jinja2 页面现在 302 跳转到 Vue 前端
+保留这些路由是为了兼容旧链接和 Hermes 网关的登录重定向
 """
 
+from urllib.parse import quote, urlencode
+
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-
-from pathlib import Path
-
-# 模板目录（项目根目录下的 templates）
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-templates = Jinja2Templates(directory=str(PROJECT_ROOT / "templates"))
+from fastapi.responses import RedirectResponse
 
 router = APIRouter()
 
@@ -28,63 +24,77 @@ def get_base_path(request: Request) -> str:
     return forwarded_prefix
 
 
-def get_template_context(request: Request, title: str, active: str) -> dict:
-    """生成模板上下文，包含 base_path"""
+def get_vue_app_url(request: Request, hash_path: str = "/") -> str:
+    """
+    构建 Vue SPA 的 URL
+
+    Args:
+        request: FastAPI Request 对象
+        hash_path: Vue 的 hash 路由路径，如 /login、/users
+
+    Returns:
+        完整的 Vue SPA URL，如 /aegis/app/#/login
+    """
     base_path = get_base_path(request)
-    return {
-        "request": request,
-        "title": title,
-        "active": active,
-        "username": "管理员",
-        "base_path": base_path,
-    }
+    return f"{base_path}/app/#{hash_path}"
 
 
-@router.get("/admin/login", response_class=HTMLResponse)
+@router.get("/admin/login")
 async def login_page(request: Request):
-    """登录页面"""
+    """
+    登录页面 - 302 跳转到 Vue 登录页
+
+    保留 redirect 参数以支持登录后回跳
+    """
     base_path = get_base_path(request)
-    return templates.TemplateResponse(
-        "login.html",
-        {"request": request, "base_path": base_path},
-    )
+    redirect_param = request.query_params.get("redirect", "")
+
+    # 构建 Vue 登录页 URL
+    vue_login_url = f"{base_path}/app/#/login"
+
+    # 如果有 redirect 参数，添加到 URL
+    if redirect_param:
+        vue_login_url += f"?redirect={quote(redirect_param, safe='')}"
+
+    return RedirectResponse(url=vue_login_url, status_code=302)
 
 
-@router.get("/admin/", response_class=HTMLResponse)
+@router.post("/admin/login/submit")
+async def login_submit(request: Request):
+    """
+    登录表单提交 - 已废弃，跳转到 Vue 登录页
+
+    Vue 前端直接调用 /api/v1/auth/login，不再使用表单提交
+    """
+    return RedirectResponse(url=get_vue_app_url(request, "/login"), status_code=302)
+
+
+@router.get("/admin/")
+@router.get("/admin")
 async def dashboard_page(request: Request):
-    """仪表盘页面"""
-    return templates.TemplateResponse(
-        "dashboard.html", get_template_context(request, "仪表盘", "dashboard")
-    )
+    """仪表盘页面 - 302 跳转到 Vue"""
+    return RedirectResponse(url=get_vue_app_url(request, "/"), status_code=302)
 
 
-@router.get("/admin/users", response_class=HTMLResponse)
+@router.get("/admin/users")
 async def users_page(request: Request):
-    """用户管理页面"""
-    return templates.TemplateResponse(
-        "users.html", get_template_context(request, "用户管理", "users")
-    )
+    """用户管理页面 - 302 跳转到 Vue"""
+    return RedirectResponse(url=get_vue_app_url(request, "/users"), status_code=302)
 
 
-@router.get("/admin/roles", response_class=HTMLResponse)
+@router.get("/admin/roles")
 async def roles_page(request: Request):
-    """角色管理页面"""
-    return templates.TemplateResponse(
-        "roles.html", get_template_context(request, "角色管理", "roles")
-    )
+    """角色管理页面 - 302 跳转到 Vue"""
+    return RedirectResponse(url=get_vue_app_url(request, "/roles"), status_code=302)
 
 
-@router.get("/admin/policies", response_class=HTMLResponse)
+@router.get("/admin/policies")
 async def policies_page(request: Request):
-    """认证策略管理页面"""
-    return templates.TemplateResponse(
-        "policies.html", get_template_context(request, "认证策略", "policies")
-    )
+    """认证策略管理页面 - 302 跳转到 Vue"""
+    return RedirectResponse(url=get_vue_app_url(request, "/policies"), status_code=302)
 
 
-@router.get("/admin/audit", response_class=HTMLResponse)
+@router.get("/admin/audit")
 async def audit_page(request: Request):
-    """审计日志页面"""
-    return templates.TemplateResponse(
-        "audit.html", get_template_context(request, "审计日志", "audit")
-    )
+    """审计日志页面 - 302 跳转到 Vue"""
+    return RedirectResponse(url=get_vue_app_url(request, "/audit"), status_code=302)

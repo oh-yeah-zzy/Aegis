@@ -33,6 +33,7 @@ Aegis 是一个基于 Python + FastAPI 的身份认证与访问管理（IAM）�
 ### 技术栈
 
 - **后端**: Python 3.9+ / FastAPI 0.104+
+- **前端**: Vue 3 + Vite（支持中英文切换）/ Jinja2（传统模板）
 - **ORM**: SQLAlchemy 2.0 (async)
 - **认证**: python-jose (JWT) / passlib (密码哈希)
 - **HTTP**: httpx (异步客户端)
@@ -73,6 +74,8 @@ python run.py
 
 | 地址 | 说明 |
 |------|------|
+| http://localhost:8000/admin | Web 管理界面（Jinja2 传统版） |
+| http://localhost:8000/app | Web 管理界面（Vue 新版，需先构建） |
 | http://localhost:8000/docs | API 文档 |
 | http://localhost:8000/health | 健康检查 |
 
@@ -83,6 +86,39 @@ python run.py
 | `admin` | `admin123` |
 
 > **警告**: 请在生产环境中立即修改默认密码！
+
+---
+
+## 前端开发
+
+Aegis 提供两套前端界面：
+- **Vue 3 版本**（推荐）：位于 `frontend/` 目录，支持中英文切换，**所有新功能将只在此版本开发**
+- **Jinja2 版本**（⚠️ Deprecated）：位于 `templates/` 目录，仅作为向后兼容保留，未来版本将移除
+
+### Vue 前端开发
+
+```bash
+# 进入前端目录
+cd frontend
+
+# 安装依赖
+npm install
+
+# 开发模式（热重载，访问 http://localhost:3002）
+npm run dev
+
+# 构建生产版本（输出到 ../static/app/）
+npm run build
+```
+
+构建完成后，访问 `http://localhost:8000/app` 即可使用 Vue 新版界面。
+
+### 国际化
+
+Vue 前端支持中英文切换：
+- 翻译文件位于 `frontend/src/locales/`
+- 导航栏右上角提供语言切换按钮
+- 语言偏好自动保存到浏览器 localStorage
 
 ---
 
@@ -98,7 +134,7 @@ python run.py [选项]
 | `--host` | `-H` | 监听地址 | 0.0.0.0 |
 | `--debug` | | 启用调试模式 | false |
 | `--reload` | | 启用热重载 | false |
-| `--registry-url` | | ServiceAtlas 地址 | http://localhost:9000 |
+| `--registry-url` | | ServiceAtlas 地址 | http://localhost:8888 |
 | `--no-registry` | | 禁用服务注册 | false |
 
 ### 示例
@@ -137,7 +173,7 @@ cp .env.example .env
 | `DATABASE_URL` | 数据库连接 | sqlite+aiosqlite:///./aegis.db |
 | `JWT_SECRET_KEY` | JWT 密钥 | (自动生成) |
 | `REGISTRY_ENABLED` | 启用服务注册 | true |
-| `REGISTRY_URL` | ServiceAtlas 地址 | http://localhost:9000 |
+| `REGISTRY_URL` | ServiceAtlas 地址 | http://localhost:8888 |
 
 ---
 
@@ -145,7 +181,7 @@ cp .env.example .env
 
 ### 启动顺序
 
-1. 先启动 ServiceAtlas（端口 9000）
+1. 先启动 ServiceAtlas（端口 8888）
 2. 再启动 Aegis（端口 8000）
 
 ```bash
@@ -159,7 +195,7 @@ cd Aegis && python run.py
 ### 验证注册
 
 ```bash
-curl http://localhost:9000/api/v1/services
+curl http://localhost:8888/api/v1/services
 ```
 
 应该能看到 `aegis` 服务已注册。
@@ -243,7 +279,7 @@ docker run -d \
   --name aegis \
   -p 8000:8000 \
   -e JWT_SECRET_KEY=your-secret-key \
-  -e REGISTRY_URL=http://service-atlas:9000 \
+  -e REGISTRY_URL=http://service-atlas:8888 \
   aegis
 
 # 使用 docker-compose
@@ -272,6 +308,19 @@ Aegis/
 │   ├── db/models/           # 数据库模型
 │   ├── schemas/             # Pydantic 模型
 │   └── middleware/          # 中间件
+├── frontend/                # Vue 3 前端（新增）
+│   ├── src/
+│   │   ├── views/           # 页面组件
+│   │   ├── components/      # 公共组件
+│   │   ├── locales/         # 国际化翻译
+│   │   ├── router/          # 路由配置（含认证守卫）
+│   │   ├── stores/          # Pinia 状态管理
+│   │   └── api/             # API 封装（含 JWT 认证）
+│   ├── package.json
+│   └── vite.config.js
+├── templates/               # HTML 模板（传统版）
+├── static/                  # 静态资源
+│   └── app/                 # Vue 构建输出目录
 ├── run.py                   # 启动脚本
 ├── requirements.txt         # 依赖
 ├── Dockerfile

@@ -18,6 +18,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.core.config import settings
 from app.core.security_config import security_settings
@@ -314,13 +315,13 @@ async def health_check():
 
 @app.get("/", tags=["根路径"])
 async def root(request: Request):
-    """根路径 - 重定向到管理界面"""
+    """根路径 - 重定向到 Vue 前端"""
     from fastapi.responses import RedirectResponse
 
     # 获取代理前缀（通过 Hermes 访问时会有 X-Forwarded-Prefix header）
     base_path = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
 
-    return RedirectResponse(url=f"{base_path}/admin/")
+    return RedirectResponse(url=f"{base_path}/app")
 
 
 # 注册 API 路由
@@ -331,3 +332,22 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 # 注册 Web 管理界面路由
 app.include_router(web_router)
+
+# Vue 前端路由（如果构建产物存在）
+VUE_APP_DIR = BASE_DIR / "static" / "app"
+if VUE_APP_DIR.exists() and (VUE_APP_DIR / "index.html").exists():
+    # 挂载 Vue 静态资源
+    app.mount("/app/assets", StaticFiles(directory=str(VUE_APP_DIR / "assets")), name="vue-assets")
+
+    @app.get("/app", include_in_schema=False)
+    async def vue_app_redirect(request: Request):
+        """重定向到带末尾斜杠的路径，确保相对路径正确解析"""
+        # 获取代理前缀
+        prefix = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
+        return RedirectResponse(url=f"{prefix}/app/", status_code=302)
+
+    @app.get("/app/", include_in_schema=False)
+    @app.get("/app/{path:path}", include_in_schema=False)
+    async def vue_app(path: str = ""):
+        """Vue SPA 入口，所有路由返回 index.html"""
+        return FileResponse(str(VUE_APP_DIR / "index.html"))

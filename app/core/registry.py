@@ -311,7 +311,7 @@ async def init_registry_client():
         metadata={
             "service_type": "authentication",  # 标记为认证服务
             "auth_endpoint": "/api/v1/auth/login",  # API 登录端点
-            "login_path": "/admin/login",  # Web 登录页面路径
+            "login_path": "/admin/login",  # Web 登录页面路径（302 跳转到 Vue）
             "auth_methods": ["jwt"],
             # 认证服务自身的认证配置
             "auth_config": {
@@ -321,11 +321,13 @@ async def init_registry_client():
                 # API 文档不再公开，需要认证后才能访问
                 "public_paths": [
                     "/health",
-                    "/admin/login",  # Web 登录页面
-                    "/admin/login/submit",  # Web 登录提交
+                    "/admin/login",  # Web 登录页面（302 跳转到 Vue）
+                    "/admin/login/submit",  # Web 登录提交（已废弃，跳转）
                     "/api/v1/auth/login",  # API 登录端点
                     "/api/v1/auth/refresh",  # 令牌刷新
                     "/static/**",  # 静态资源
+                    "/app",  # Vue SPA 入口
+                    "/app/**",  # Vue SPA 资源
                 ],
             },
         },
